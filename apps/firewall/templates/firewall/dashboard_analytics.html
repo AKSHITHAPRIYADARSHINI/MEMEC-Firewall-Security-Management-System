@@ -1,0 +1,878 @@
+{% extends "layouts/base.html" %}
+
+{% block title %}Firewall Analytics Dashboard{% endblock %}
+
+{% set page_title = "Security Analytics Dashboard" %}
+{% set breadcrumbs = [
+  {"title": "Administration", "url": None},
+  {"title": "Dashboard", "url": url_for('firewall_blueprint.dashboard')}
+] %}
+
+{% block stylesheets %}
+<link href="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.css" rel="stylesheet">
+<style>
+  .metric-card {
+    border-left: 4px solid;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+
+  .metric-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+  }
+
+  .metric-card.success { border-left-color: #66BB6A; }
+  .metric-card.warning { border-left-color: #FFA726; }
+  .metric-card.danger { border-left-color: #EF5350; }
+  .metric-card.critical { border-left-color: #AB47BC; }
+
+  .metric-value {
+    font-size: 2.5rem;
+    font-weight: bold;
+    margin: 10px 0;
+  }
+
+  .metric-label {
+    font-size: 0.9rem;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .metric-change {
+    font-size: 0.85rem;
+    margin-top: 8px;
+  }
+
+  .metric-change.positive { color: #66BB6A; }
+  .metric-change.negative { color: #EF5350; }
+
+  .chart-container {
+    position: relative;
+    height: 300px;
+    margin-bottom: 20px;
+  }
+
+  .risk-badge {
+    font-weight: 500;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+  }
+
+  .risk-low { background-color: #C8E6C9; color: #2E7D32; }
+  .risk-medium { background-color: #FFE0B2; color: #E65100; }
+  .risk-high { background-color: #FFCDD2; color: #C62828; }
+  .risk-critical { background-color: #F3E5F5; color: #6A1B9A; }
+
+  .event-table {
+    font-size: 0.9rem;
+  }
+
+  .event-table tbody tr:hover {
+    background-color: #F5F5F5;
+  }
+
+  .timestamp {
+    color: #666;
+    font-size: 0.85rem;
+  }
+
+  .filter-controls {
+    background-color: #F5F5F5;
+    padding: 15px;
+    border-radius: 4px;
+    margin-bottom: 20px;
+  }
+
+  .widget-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .widget-icon {
+    font-size: 1.3rem;
+    color: #3f51b5;
+  }
+
+  .loading {
+    text-align: center;
+    padding: 30px;
+    color: #999;
+  }
+
+  .spinner {
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid #3f51b5;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 10px;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  .stats-widget {
+    background: white;
+    padding: 15px;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-left: 4px solid #3f51b5;
+  }
+
+  .stats-widget-value {
+    font-size: 1.8rem;
+    font-weight: bold;
+  }
+
+  .stats-widget-label {
+    font-size: 0.9rem;
+    color: #666;
+  }
+
+  .refresh-indicator {
+    font-size: 0.8rem;
+    color: #999;
+    margin-top: 10px;
+  }
+
+  .security-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    border-radius: 4px;
+    margin-bottom: 15px;
+  }
+
+  .status-good { background-color: #E8F5E9; color: #2E7D32; }
+  .status-warning { background-color: #FFF3E0; color: #E65100; }
+  .status-alert { background-color: #FFEBEE; color: #C62828; }
+
+  .status-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    animation: pulse 2s infinite;
+  }
+
+  .status-good .status-indicator { background-color: #66BB6A; }
+  .status-warning .status-indicator { background-color: #FFA726; }
+  .status-alert .status-indicator { background-color: #EF5350; }
+
+  @keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+  <!-- Page Header -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <h3 class="mb-0">
+        <i class="fas fa-shield-alt me-2" style="color: #3f51b5;"></i>Security Analytics Dashboard
+      </h3>
+      <p class="text-secondary mt-2">Real-time firewall monitoring and threat detection</p>
+    </div>
+  </div>
+
+  <!-- Date Range & Refresh Controls -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="filter-controls">
+        <div class="row">
+          <div class="col-md-4">
+            <label class="form-label" style="font-weight: 500;">Time Period</label>
+            <select class="form-select form-select-sm" id="dateRangeSelect">
+              <option value="today">Today</option>
+              <option value="7days" selected>Last 7 Days</option>
+              <option value="30days">Last 30 Days</option>
+              <option value="custom">Custom Range</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label" style="font-weight: 500;">Risk Filter</label>
+            <select class="form-select form-select-sm" id="riskFilterSelect">
+              <option value="all">All Risks</option>
+              <option value="low">Low Risk</option>
+              <option value="medium">Medium Risk</option>
+              <option value="high">High Risk</option>
+              <option value="critical">Critical Risk</option>
+            </select>
+          </div>
+          <div class="col-md-4 d-flex align-items-end">
+            <button class="btn btn-sm btn-outline-primary me-2" id="refreshBtn">
+              <i class="fas fa-sync-alt me-1"></i>Refresh Now
+            </button>
+            <div class="refresh-indicator">
+              <small id="lastUpdate">Auto-refreshing every 30s</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Security Status Alert -->
+  <div class="row mb-4">
+    <div class="col-12" id="securityStatus">
+      <div class="security-status status-good">
+        <span class="status-indicator"></span>
+        <span><strong>System Status:</strong> Normal - All systems operating within parameters</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top Metric Cards -->
+  <div class="row mb-4">
+    <div class="col-md-3 col-sm-6 mb-3">
+      <div class="card metric-card success">
+        <div class="card-body">
+          <div class="metric-label">
+            <i class="fas fa-sign-in-alt me-1"></i>Total Login Attempts
+          </div>
+          <div class="metric-value" id="todayLoginsValue">0</div>
+          <div class="metric-change positive">
+            <span id="loginsChange">↑ 0% from yesterday</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-3 col-sm-6 mb-3">
+      <div class="card metric-card danger">
+        <div class="card-body">
+          <div class="metric-label">
+            <i class="fas fa-ban me-1"></i>Blocked IPs Today
+          </div>
+          <div class="metric-value" id="blockedIPsValue">0</div>
+          <div class="metric-change">
+            <span id="blockedIPsDesc">Suspicious/Malicious attempts</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-3 col-sm-6 mb-3">
+      <div class="card metric-card success">
+        <div class="card-body">
+          <div class="metric-label">
+            <i class="fas fa-check-circle me-1"></i>Active Whitelist
+          </div>
+          <div class="metric-value" id="whitelistValue">0</div>
+          <div class="metric-change">
+            <span id="whitelistDesc">Allowed IP addresses</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-3 col-sm-6 mb-3">
+      <div class="card metric-card critical">
+        <div class="card-body">
+          <div class="metric-label">
+            <i class="fas fa-exclamation-circle me-1"></i>Security Alerts
+          </div>
+          <div class="metric-value" id="alertsValue">0</div>
+          <div class="metric-change">
+            <span id="alertsDesc">High-risk events</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Charts Row 1 -->
+  <div class="row mb-4">
+    <!-- 24-Hour Activity Chart -->
+    <div class="col-lg-8 mb-4">
+      <div class="card">
+        <div class="card-header pb-0 pt-4 px-4">
+          <div class="widget-title">
+            <i class="fas fa-chart-bar widget-icon"></i>
+            24-Hour Login Activity
+          </div>
+        </div>
+        <div class="card-body p-4">
+          <div class="chart-container">
+            <canvas id="hourlyActivityChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Risk Distribution Chart -->
+    <div class="col-lg-4 mb-4">
+      <div class="card">
+        <div class="card-header pb-0 pt-4 px-4">
+          <div class="widget-title">
+            <i class="fas fa-pie-chart widget-icon"></i>
+            Risk Distribution (Today)
+          </div>
+        </div>
+        <div class="card-body p-4">
+          <div class="chart-container">
+            <canvas id="riskDistributionChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Charts Row 2 -->
+  <div class="row mb-4">
+    <!-- 7-Day Access Trends -->
+    <div class="col-lg-12 mb-4">
+      <div class="card">
+        <div class="card-header pb-0 pt-4 px-4">
+          <div class="widget-title">
+            <i class="fas fa-chart-line widget-icon"></i>
+            7-Day Access Trends
+          </div>
+        </div>
+        <div class="card-body p-4">
+          <div class="chart-container" style="height: 350px;">
+            <canvas id="weeklyTrendsChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Statistics Widgets Row -->
+  <div class="row mb-4">
+    <div class="col-lg-6 mb-4">
+      <div class="card">
+        <div class="card-header pb-0 pt-4 px-4">
+          <div class="widget-title">
+            <i class="fas fa-list widget-icon"></i>
+            Top 5 Blocked IPs
+          </div>
+        </div>
+        <div class="card-body p-4">
+          <div id="topBlockedIPsWidget">
+            <div class="loading"><div class="spinner"></div>Loading...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-6 mb-4">
+      <div class="card">
+        <div class="card-header pb-0 pt-4 px-4">
+          <div class="widget-title">
+            <i class="fas fa-clock widget-icon"></i>
+            Most Active Login Hours
+          </div>
+        </div>
+        <div class="card-body p-4">
+          <div id="topLoginTimesWidget">
+            <div class="loading"><div class="spinner"></div>Loading...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Monthly Summary & User Frequency -->
+  <div class="row mb-4">
+    <div class="col-lg-6 mb-4">
+      <div class="card">
+        <div class="card-header pb-0 pt-4 px-4">
+          <div class="widget-title">
+            <i class="fas fa-calendar-alt widget-icon"></i>
+            Monthly Summary
+          </div>
+        </div>
+        <div class="card-body p-4">
+          <div id="monthlySummaryWidget">
+            <div class="loading"><div class="spinner"></div>Loading...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-6 mb-4">
+      <div class="card">
+        <div class="card-header pb-0 pt-4 px-4">
+          <div class="widget-title">
+            <i class="fas fa-users widget-icon"></i>
+            Most Active Users (7-Day)
+          </div>
+        </div>
+        <div class="card-body p-4">
+          <div id="userFrequencyWidget">
+            <div class="loading"><div class="spinner"></div>Loading...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Security Events Table -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header pb-0 pt-4 px-4">
+          <div class="widget-title">
+            <i class="fas fa-history widget-icon"></i>
+            Recent Security Events (Live Feed)
+          </div>
+        </div>
+        <div class="card-body p-4">
+          <div id="recentEventsWidget">
+            <div class="loading"><div class="spinner"></div>Loading recent events...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block javascripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+<script>
+  // Global chart instances
+  let hourlyChart, riskChart, weeklyChart;
+  let autoRefreshInterval;
+
+  // Initialize dashboard on page load
+  document.addEventListener('DOMContentLoaded', function() {
+    loadDashboardData();
+    setupAutoRefresh();
+    setupEventListeners();
+  });
+
+  // Setup event listeners
+  function setupEventListeners() {
+    document.getElementById('refreshBtn').addEventListener('click', function() {
+      this.disabled = true;
+      loadDashboardData();
+      setTimeout(() => this.disabled = false, 1000);
+    });
+
+    document.getElementById('dateRangeSelect').addEventListener('change', loadDashboardData);
+    document.getElementById('riskFilterSelect').addEventListener('change', loadRecentEvents);
+  }
+
+  // Auto-refresh every 30 seconds
+  function setupAutoRefresh() {
+    autoRefreshInterval = setInterval(loadDashboardData, 30000);
+  }
+
+  // Load all dashboard data
+  function loadDashboardData() {
+    Promise.all([
+      loadMetrics(),
+      loadHourlyActivity(),
+      loadWeeklyTrends(),
+      loadRiskDistribution(),
+      loadRecentEvents(),
+      loadTopBlockedIPs(),
+      loadTopLoginTimes(),
+      loadUserFrequency(),
+      loadMonthlySummary()
+    ]).then(() => {
+      updateLastRefreshTime();
+    }).catch(error => {
+      console.error('Error loading dashboard:', error);
+      showErrorNotification('Failed to load dashboard data');
+    });
+  }
+
+  // Load metric cards
+  function loadMetrics() {
+    return fetch('{{ url_for("firewall_blueprint.api_dashboard_metrics") }}')
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          const metrics = data.data;
+
+          // Update metric cards
+          document.getElementById('todayLoginsValue').textContent = metrics.today_logins;
+          document.getElementById('blockedIPsValue').textContent = metrics.today_blocked_ips;
+          document.getElementById('whitelistValue').textContent = metrics.active_whitelist;
+          document.getElementById('alertsValue').textContent = metrics.today_alerts;
+
+          // Calculate percentage change
+          const yesterday = metrics.yesterday_logins || 1;
+          const today = metrics.today_logins;
+          const change = ((today - yesterday) / yesterday * 100).toFixed(0);
+          const changeText = change >= 0 ? `↑ ${change}% from yesterday` : `↓ ${Math.abs(change)}% from yesterday`;
+          document.getElementById('loginsChange').textContent = changeText;
+
+          // Update security status
+          updateSecurityStatus(metrics);
+        }
+      })
+      .catch(error => console.error('Error loading metrics:', error));
+  }
+
+  // Load hourly activity chart
+  function loadHourlyActivity() {
+    return fetch('{{ url_for("firewall_blueprint.api_hourly_activity") }}')
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          const chartData = data.data;
+          const hours = Object.keys(chartData).map(h => h.padStart(2, '0') + ':00');
+          const successful = Object.values(chartData).map(d => d.successful);
+          const suspicious = Object.values(chartData).map(d => d.suspicious);
+          const blocked = Object.values(chartData).map(d => d.blocked);
+
+          const ctx = document.getElementById('hourlyActivityChart').getContext('2d');
+
+          if (hourlyChart) hourlyChart.destroy();
+
+          hourlyChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+              labels: hours,
+              datasets: [
+                {
+                  label: 'Successful',
+                  data: successful,
+                  backgroundColor: 'rgba(102, 187, 106, 0.8)',
+                  borderColor: 'rgba(102, 187, 106, 1)',
+                  borderWidth: 1
+                },
+                {
+                  label: 'Suspicious',
+                  data: suspicious,
+                  backgroundColor: 'rgba(255, 167, 38, 0.8)',
+                  borderColor: 'rgba(255, 167, 38, 1)',
+                  borderWidth: 1
+                },
+                {
+                  label: 'Blocked',
+                  data: blocked,
+                  backgroundColor: 'rgba(239, 83, 80, 0.8)',
+                  borderColor: 'rgba(239, 83, 80, 1)',
+                  borderWidth: 1
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { position: 'top' }
+              },
+              scales: {
+                y: { beginAtZero: true }
+              }
+            }
+          });
+        }
+      })
+      .catch(error => console.error('Error loading hourly activity:', error));
+  }
+
+  // Load weekly trends chart
+  function loadWeeklyTrends() {
+    return fetch('{{ url_for("firewall_blueprint.api_weekly_trends") }}')
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          const trends = data.data;
+          const labels = trends.map(t => t.day + '\n' + t.date);
+          const total = trends.map(t => t.total);
+          const successful = trends.map(t => t.successful);
+          const blocked = trends.map(t => t.blocked);
+
+          const ctx = document.getElementById('weeklyTrendsChart').getContext('2d');
+
+          if (weeklyChart) weeklyChart.destroy();
+
+          weeklyChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+              labels: labels,
+              datasets: [
+                {
+                  label: 'Total Attempts',
+                  data: total,
+                  borderColor: 'rgba(63, 81, 181, 1)',
+                  backgroundColor: 'rgba(63, 81, 181, 0.1)',
+                  borderWidth: 2,
+                  fill: true,
+                  tension: 0.4
+                },
+                {
+                  label: 'Successful',
+                  data: successful,
+                  borderColor: 'rgba(102, 187, 106, 1)',
+                  backgroundColor: 'rgba(102, 187, 106, 0.1)',
+                  borderWidth: 2,
+                  fill: false,
+                  tension: 0.4
+                },
+                {
+                  label: 'Blocked',
+                  data: blocked,
+                  borderColor: 'rgba(239, 83, 80, 1)',
+                  backgroundColor: 'rgba(239, 83, 80, 0.1)',
+                  borderWidth: 2,
+                  fill: false,
+                  tension: 0.4
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { position: 'top' }
+              },
+              scales: {
+                y: { beginAtZero: true }
+              }
+            }
+          });
+        }
+      })
+      .catch(error => console.error('Error loading weekly trends:', error));
+  }
+
+  // Load risk distribution chart
+  function loadRiskDistribution() {
+    return fetch('{{ url_for("firewall_blueprint.api_risk_distribution") }}')
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          const riskData = data.data;
+
+          const ctx = document.getElementById('riskDistributionChart').getContext('2d');
+
+          if (riskChart) riskChart.destroy();
+
+          riskChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+              labels: ['Low Risk', 'Medium Risk', 'High Risk', 'Critical'],
+              datasets: [{
+                data: [riskData.low, riskData.medium, riskData.high, riskData.critical],
+                backgroundColor: [
+                  'rgba(102, 187, 106, 0.8)',
+                  'rgba(255, 167, 38, 0.8)',
+                  'rgba(239, 83, 80, 0.8)',
+                  'rgba(171, 71, 188, 0.8)'
+                ],
+                borderColor: [
+                  'rgba(102, 187, 106, 1)',
+                  'rgba(255, 167, 38, 1)',
+                  'rgba(239, 83, 80, 1)',
+                  'rgba(171, 71, 188, 1)'
+                ],
+                borderWidth: 1
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { position: 'bottom' }
+              }
+            }
+          });
+        }
+      })
+      .catch(error => console.error('Error loading risk distribution:', error));
+  }
+
+  // Load recent events table
+  function loadRecentEvents() {
+    const riskLevel = document.getElementById('riskFilterSelect').value;
+    return fetch(`{{ url_for("firewall_blueprint.api_recent_events") }}?limit=20&risk_level=${riskLevel}`)
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          const events = data.data;
+          const html = events.length > 0 ? `
+            <div class="table-responsive">
+              <table class="table table-sm event-table">
+                <thead>
+                  <tr>
+                    <th>Timestamp</th>
+                    <th>IP Address</th>
+                    <th>Event Type</th>
+                    <th>Risk Level</th>
+                    <th>Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${events.map(event => `
+                    <tr>
+                      <td><span class="timestamp">${event.timestamp}</span></td>
+                      <td><code>${event.ip_address}</code></td>
+                      <td>${event.event_type}</td>
+                      <td><span class="risk-badge risk-${event.risk_level}">${event.risk_level.toUpperCase()}</span></td>
+                      <td>${event.description}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          ` : '<p class="text-muted">No events found</p>';
+
+          document.getElementById('recentEventsWidget').innerHTML = html;
+        }
+      })
+      .catch(error => console.error('Error loading recent events:', error));
+  }
+
+  // Load top blocked IPs
+  function loadTopBlockedIPs() {
+    return fetch('{{ url_for("firewall_blueprint.api_top_blocked_ips") }}?limit=5')
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          const ips = data.data;
+          const html = ips.length > 0 ? `
+            <div>
+              ${ips.map((ip, idx) => `
+                <div class="stats-widget">
+                  <div>
+                    <div class="stats-widget-label">${idx + 1}. ${ip.ip}</div>
+                  </div>
+                  <div class="stats-widget-value">${ip.count}</div>
+                </div>
+              `).join('')}
+            </div>
+          ` : '<p class="text-muted">No blocked IPs</p>';
+
+          document.getElementById('topBlockedIPsWidget').innerHTML = html;
+        }
+      })
+      .catch(error => console.error('Error loading top blocked IPs:', error));
+  }
+
+  // Load top login times
+  function loadTopLoginTimes() {
+    return fetch('{{ url_for("firewall_blueprint.api_top_login_times") }}')
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          const times = data.data.slice(0, 5);
+          const html = times.length > 0 ? `
+            <div>
+              ${times.map((time, idx) => `
+                <div class="stats-widget">
+                  <div>
+                    <div class="stats-widget-label">${idx + 1}. ${time.hour}</div>
+                  </div>
+                  <div class="stats-widget-value">${time.count}</div>
+                </div>
+              `).join('')}
+            </div>
+          ` : '<p class="text-muted">No data available</p>';
+
+          document.getElementById('topLoginTimesWidget').innerHTML = html;
+        }
+      })
+      .catch(error => console.error('Error loading top login times:', error));
+  }
+
+  // Load user frequency
+  function loadUserFrequency() {
+    return fetch('{{ url_for("firewall_blueprint.api_user_frequency") }}?limit=5')
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          const users = data.data;
+          const html = users.length > 0 ? `
+            <div>
+              ${users.map((user, idx) => `
+                <div class="stats-widget">
+                  <div>
+                    <div class="stats-widget-label">${idx + 1}. ${user.username}</div>
+                  </div>
+                  <div class="stats-widget-value">${user.count}</div>
+                </div>
+              `).join('')}
+            </div>
+          ` : '<p class="text-muted">No user data available</p>';
+
+          document.getElementById('userFrequencyWidget').innerHTML = html;
+        }
+      })
+      .catch(error => console.error('Error loading user frequency:', error));
+  }
+
+  // Load monthly summary
+  function loadMonthlySummary() {
+    return fetch('{{ url_for("firewall_blueprint.api_monthly_summary") }}')
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          const summary = data.data;
+          const html = `
+            <div class="row">
+              <div class="col-6"><div class="stats-widget-label">Month</div><div class="stats-widget-value">${summary.month}</div></div>
+              <div class="col-6"><div class="stats-widget-label">Total Logins</div><div class="stats-widget-value">${summary.total_logins}</div></div>
+              <div class="col-6" style="margin-top: 10px;"><div class="stats-widget-label">Successful</div><div class="stats-widget-value" style="color: #66BB6A;">${summary.successful_logins}</div></div>
+              <div class="col-6" style="margin-top: 10px;"><div class="stats-widget-label">Blocked</div><div class="stats-widget-value" style="color: #EF5350;">${summary.blocked_attempts}</div></div>
+              <div class="col-6" style="margin-top: 10px;"><div class="stats-widget-label">Peak Hour</div><div class="stats-widget-value">${summary.peak_hour}</div></div>
+              <div class="col-6" style="margin-top: 10px;"><div class="stats-widget-label">Top User</div><div class="stats-widget-value" style="font-size: 1rem;">${summary.most_active_user}</div></div>
+            </div>
+          `;
+
+          document.getElementById('monthlySummaryWidget').innerHTML = html;
+        }
+      })
+      .catch(error => console.error('Error loading monthly summary:', error));
+  }
+
+  // Update security status badge
+  function updateSecurityStatus(metrics) {
+    const statusDiv = document.getElementById('securityStatus');
+    let status = 'good';
+    let message = 'Normal - All systems operating within parameters';
+
+    if (metrics.today_alerts > 0 && metrics.today_alerts <= 5) {
+      status = 'warning';
+      message = `⚠️ Warning - ${metrics.today_alerts} high-risk event(s) detected today`;
+    } else if (metrics.today_alerts > 5) {
+      status = 'alert';
+      message = `🚨 Alert - ${metrics.today_alerts} high-risk events detected today. Immediate attention required!`;
+    }
+
+    statusDiv.innerHTML = `
+      <div class="security-status status-${status}">
+        <span class="status-indicator"></span>
+        <span><strong>System Status:</strong> ${message}</span>
+      </div>
+    `;
+  }
+
+  // Update last refresh time
+  function updateLastRefreshTime() {
+    const now = new Date();
+    const time = now.toLocaleTimeString();
+    document.getElementById('lastUpdate').textContent = `Last updated: ${time}`;
+  }
+
+  // Show error notification
+  function showErrorNotification(message) {
+    // Could implement toast notification here
+    console.error(message);
+  }
+</script>
+{% endblock %}

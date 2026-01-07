@@ -3,6 +3,7 @@
 Copyright (c) 2019 - present AppSeed.us
 """
 
+import os
 from flask import Flask
 from flask_login import LoginManager
 from flask_sqlalchemy import SQLAlchemy
@@ -19,7 +20,7 @@ def register_extensions(app):
 
 
 def register_blueprints(app):
-    for module_name in ('authentication', 'home'):
+    for module_name in ('authentication', 'home', 'firewall'):
         module = import_module('apps.{}.routes'.format(module_name))
         app.register_blueprint(module.blueprint)
 
@@ -52,4 +53,12 @@ def create_app(config):
     register_extensions(app)
     register_blueprints(app)
     configure_database(app)
+
+    # Initialize scheduler for background tasks
+    try:
+        from apps.firewall.scheduler import init_scheduler
+        init_scheduler(app)
+    except Exception as e:
+        print(f'> Warning: Could not initialize scheduler: {e}')
+
     return app
