@@ -3,7 +3,7 @@
 Copyright (c) 2019 - present AppSeed.us
 """
 
-from flask import render_template, redirect, request, url_for
+from flask import render_template, redirect, request, url_for, flash
 from flask_login import (
     current_user,
     login_user,
@@ -14,7 +14,7 @@ from apps import db, login_manager
 from apps.authentication import blueprint
 from apps.authentication.forms import LoginForm, CreateAccountForm
 from apps.authentication.models import Users
-
+from apps.authentication.decorators import admin_required
 from apps.authentication.util import verify_pass
 
 
@@ -99,6 +99,81 @@ def register():
 def logout():
     logout_user()
     return redirect(url_for('authentication_blueprint.login'))
+
+
+# Admin Routes
+
+@blueprint.route('/admin/users', methods=['GET'])
+@admin_required
+def admin_users_list():
+    page = request.args.get('page', 1, type=int)
+    users = Users.query.paginate(page=page, per_page=10)
+    return render_template('admin/users_list.html', users=users)
+
+
+@blueprint.route('/admin/users/create', methods=['GET', 'POST'])
+@admin_required
+def admin_create_user():
+    form = CreateAccountForm(request.form)
+    if 'register' in request.form:
+        username = request.form['username']
+        email = request.form['email']
+        password = request.form['password']
+
+        # Check username exists
+        user = Users.query.filter_by(username=username).first()
+        if user:
+            flash('Username already exists', 'danger')
+            return render_template('admin/create_user.html', form=form)
+
+        # Check email exists
+        user = Users.query.filter_by(email=email).first()
+        if user:
+            flash('Email already exists', 'danger')
+            return render_template('admin/create_user.html', form=form)
+
+        # Create new user
+        user = Users(username=username, email=email, password=password)
+        db.session.add(user)
+        db.session.commit()
+
+        flash('User created successfully', 'success')
+        return redirect(url_for('authentication_blueprint.admin_users_list'))
+
+    return render_template('admin/create_user.html', form=form)
+
+
+@blueprint.route('/admin/users/edit/<int:user_id>', methods=['GET', 'POST'])
+@admin_required
+def admin_edit_user(user_id):
+    user = Users.query.get_or_404(user_id)
+    form = CreateAccountForm(request.form)
+
+    if 'register' in request.form:
+        user.username = request.form['username']
+        user.email = request.form['email']
+        if request.form.get('password'):
+            user.password = request.form['password']
+
+        db.session.commit()
+        flash('User updated successfully', 'success')
+        return redirect(url_for('authentication_blueprint.admin_users_list'))
+
+    return render_template('admin/edit_user.html', form=form, user=user)
+
+
+@blueprint.route('/admin/users/delete/<int:user_id>', methods=['POST'])
+@admin_required
+def admin_delete_user(user_id):
+    user = Users.query.get_or_404(user_id)
+    if user.id == current_user.id:
+        flash('You cannot delete yourself', 'danger')
+        return redirect(url_for('authentication_blueprint.admin_users_list'))
+
+    db.session.delete(user)
+    db.session.commit()
+    flash('User deleted successfully', 'success')
+    return redirect(url_for('authentication_blueprint.admin_users_list'))
 
 
 # Errors

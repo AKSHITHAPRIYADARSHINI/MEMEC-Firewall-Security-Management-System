@@ -1,0 +1,16 @@
+<!-- Breadcrumbs -->
+{% if breadcrumbs %}
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb bg-transparent mb-0 pb-0 pt-1 px-0 me-sm-6 me-5">
+    <li class="breadcrumb-item text-sm"><a class="opacity-5 text-dark" href="/">Dashboard</a></li>
+    {% for item in breadcrumbs %}
+      {% if item.url %}
+        <li class="breadcrumb-item text-sm"><a class="opacity-5 text-dark" href="{{ item.url }}">{{ item.title }}</a></li>
+      {% else %}
+        <li class="breadcrumb-item text-sm text-dark active" aria-current="page">{{ item.title }}</li>
+      {% endif %}
+    {% endfor %}
+  </ol>
+  <h6 class="font-weight-bolder mb-0">{{ page_title if page_title else 'Dashboard' }}</h6>
+</nav>
+{% endif %}
