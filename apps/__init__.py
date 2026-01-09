@@ -56,8 +56,9 @@ def create_app(config):
 
     # Initialize scheduler for background tasks
     try:
-        from apps.firewall.scheduler import init_scheduler
-        init_scheduler(app)
+        if not os.getenv('DISABLE_SCHEDULER'):
+            from apps.firewall.scheduler import init_scheduler
+            init_scheduler(app)
     except Exception as e:
         print(f'> Warning: Could not initialize scheduler: {e}')
 

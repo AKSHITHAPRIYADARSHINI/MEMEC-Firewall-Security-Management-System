@@ -15,6 +15,7 @@ Flask-Minify>=0.38
 pandas>=2.0.0
 numpy>=2.0.0
 APScheduler>=3.10.0
+waitress>=2.1.0
 
 # flask_mysqldb
 # psycopg2-binary

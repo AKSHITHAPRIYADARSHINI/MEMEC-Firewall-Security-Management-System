@@ -1,28 +1,30 @@
 version: '3.8'
+
 services:
-  appseed-app:
-    container_name: appseed_app
-    restart: always
-    env_file: .env
-    build: .
-    networks:
-      - db_network
-      - web_network
-  nginx:
-    container_name: nginx
-    restart: always
-    image: "nginx:latest"
+  firewall-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: firewall-dashboard
     ports:
-      - "5085:5085"
+      - "5000:5000"
+    environment:
+      - DEBUG=False
+      - FLASK_ENV=production
+      - DISABLE_SCHEDULER=True
     volumes:
-      - ./nginx:/etc/nginx/conf.d
+      - ./apps:/app/apps
+      - ./apps/db.sqlite3:/app/apps/db.sqlite3
     networks:
-      - web_network
-    depends_on: 
-      - appseed-app
+      - firewall-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/login"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
 networks:
-  db_network:
+  firewall-net:
     driver: bridge
-  web_network:
-    driver: bridge
- 
