@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+      - JWT_SECRET=firewall_soc_secret_key_2026
+    volumes:
+      - ./backend/src:/app/src
+    command: npm run dev
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:3001
+      - VITE_WS_URL=ws://localhost:3001
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+    command: npm run dev
+    depends_on:
+      - backend
+
+volumes:
+  node_modules_backend:
+  node_modules_frontend:
